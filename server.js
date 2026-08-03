@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const cors = require('cors');
 const path = require('path');
 
 const app = express();
@@ -11,6 +12,12 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   }
 });
+
+// NOTE: Socket.IO's cors option above only covers the socket transport.
+// Regular Express/HTTP routes (like /api/turn-credentials) need their own
+// CORS middleware, or browser fetch() calls from a different origin will be
+// blocked and silently fail.
+app.use(cors({ origin: '*' })); // restrict this to your actual frontend origin(s) in production
 
 app.use(express.static(path.join(__dirname, 'public')));
 
