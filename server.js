@@ -14,6 +14,46 @@ const io = new Server(server, {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// TURN/STUN credentials endpoint
+// The Metered API key stays server-side only (set via env var), never sent to the browser.
+// A short in-memory cache avoids hitting Metered's API on every single page load.
+const METERED_API_KEY = process.env.METERED_API_KEY;
+const METERED_APP_NAME = process.env.METERED_APP_NAME || 'convoapp'; // e.g. "convoapp" from convoapp.metered.live
+
+let cachedIceServers = null;
+let cacheExpiresAt = 0;
+
+app.get('/api/turn-credentials', async (req, res) => {
+  try {
+    if (!METERED_API_KEY) {
+      return res.status(500).json({ error: 'METERED_API_KEY is not configured on the server' });
+    }
+
+    const now = Date.now();
+    if (cachedIceServers && now < cacheExpiresAt) {
+      return res.json(cachedIceServers);
+    }
+
+    const url = `https://${METERED_APP_NAME}.metered.live/api/v1/turn/credentials?apiKey=${METERED_API_KEY}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Metered API responded with ${response.status}`);
+    }
+
+    const iceServers = await response.json();
+
+    // Metered TURN credentials are typically valid for a while; cache for 1 hour to be safe.
+    cachedIceServers = iceServers;
+    cacheExpiresAt = now + 60 * 60 * 1000;
+
+    res.json(iceServers);
+  } catch (err) {
+    console.error('Failed to fetch TURN credentials:', err.message);
+    res.status(502).json({ error: 'Failed to fetch TURN credentials' });
+  }
+});
+
 io.on('connection', (socket) => {
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
